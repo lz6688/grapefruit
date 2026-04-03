@@ -22,6 +22,10 @@ interface SerializedProcess {
   started?: string;
 }
 
+function num(value?: number | bigint): number | undefined {
+  return typeof value === "bigint" ? Number(value) : value;
+}
+
 function isRemovable(dev: Device): boolean {
   return dev.type === frida.DeviceType.Remote && dev.name !== "Local Socket";
 }
@@ -50,7 +54,7 @@ export function process(proc: Process): SerializedProcess {
   const params = parameters as {
     path?: string;
     user?: string;
-    ppid?: number;
+    ppid?: number | bigint;
     started?: string;
   };
   return {
@@ -58,7 +62,7 @@ export function process(proc: Process): SerializedProcess {
     pid,
     path: params.path,
     user: params.user,
-    ppid: params.ppid,
+    ppid: num(params.ppid),
     started: params.started,
   };
 }
