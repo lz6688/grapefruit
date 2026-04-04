@@ -220,6 +220,82 @@ describe("Script management API", () => {
     assert.strictEqual(missingRes.status, 404);
   });
 
+  it("should export and import the script library without overwriting duplicates", async () => {
+    const existing = scriptStore.create({
+      name: "bootstrap",
+      description: "existing",
+      source: "send('existing');",
+    });
+    scriptIds.add(existing.id);
+
+    const exportRes = await app.request("/api/scripts/export");
+    assert.strictEqual(exportRes.status, 200);
+    const exported = (await exportRes.json()) as {
+      version: number;
+      exportedAt: string;
+      scripts: Array<{
+        name: string;
+        description: string | null;
+        source: string;
+      }>;
+    };
+    assert.strictEqual(exported.version, 1);
+    assert.strictEqual(typeof exported.exportedAt, "string");
+    assert(
+      exported.scripts.some((script) => script.name === "bootstrap"),
+      "export should include existing scripts",
+    );
+
+    const importRes = await app.request("/api/scripts/import", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        version: 1,
+        exportedAt: "2026-04-04T00:00:00.000Z",
+        scripts: [
+          {
+            name: "bootstrap",
+            description: "duplicate",
+            source: "send('duplicate');",
+          },
+          {
+            name: "late hook",
+            description: null,
+            source: "send('late');",
+          },
+        ],
+      }),
+    });
+    assert.strictEqual(importRes.status, 201);
+    const imported = (await importRes.json()) as {
+      imported: Array<{ id: number; name: string }>;
+    };
+    for (const script of imported.imported) {
+      scriptIds.add(script.id);
+    }
+    assert(
+      imported.imported.some((script) => script.name === "bootstrap (imported)"),
+    );
+    assert(imported.imported.some((script) => script.name === "late hook"));
+
+    const beforeInvalidImport = scriptStore.list().length;
+    const invalidRes = await app.request("/api/scripts/import", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        version: 1,
+        exportedAt: "2026-04-04T00:00:00.000Z",
+        scripts: [{ name: "broken" }],
+      }),
+    });
+    assert.strictEqual(invalidRes.status, 400);
+    assert.strictEqual(
+      scriptStore.list().length,
+      beforeInvalidImport,
+      "invalid import should not write partial records",
+    );
+  });
+
   it("should create plans, replace targets and items, then read full detail", async () => {
     const script = scriptStore.create({
       name: "Attach hook",

@@ -20,6 +20,77 @@ async function readBody<T>(req: Request): Promise<T | null> {
   return req.json().catch(() => null);
 }
 
+interface ScriptLibraryEntry {
+  name: string;
+  description: string | null;
+  source: string;
+}
+
+interface ScriptLibraryPayload {
+  version: number;
+  exportedAt: string;
+  scripts: ScriptLibraryEntry[];
+}
+
+function parseLibraryPayload(body: unknown): ScriptLibraryPayload {
+  if (!body || typeof body !== "object" || Array.isArray(body)) {
+    throw new Error("invalid script library payload");
+  }
+
+  const record = body as Record<string, unknown>;
+  if (!Array.isArray(record.scripts)) {
+    throw new Error("invalid script library payload");
+  }
+
+  const parsedScripts = record.scripts.map((entry, index) => {
+    if (!entry || typeof entry !== "object" || Array.isArray(entry)) {
+      throw new Error(`script ${index + 1} must be an object`);
+    }
+
+    const item = entry as Record<string, unknown>;
+    const name = typeof item.name === "string" ? item.name.trim() : "";
+    const source = typeof item.source === "string" ? item.source : "";
+
+    if (!name || !source) {
+      throw new Error(`script ${index + 1} requires name and source`);
+    }
+
+    return {
+      name,
+      description:
+        typeof item.description === "string" ? item.description : null,
+      source,
+    };
+  });
+
+  return {
+    version: typeof record.version === "number" ? record.version : 1,
+    exportedAt:
+      typeof record.exportedAt === "string"
+        ? record.exportedAt
+        : new Date().toISOString(),
+    scripts: parsedScripts,
+  };
+}
+
+function resolveImportedName(name: string, taken: Set<string>): string {
+  if (!taken.has(name)) {
+    taken.add(name);
+    return name;
+  }
+
+  let suffix = 1;
+  while (true) {
+    const candidate =
+      suffix === 1 ? `${name} (imported)` : `${name} (imported ${suffix})`;
+    if (!taken.has(candidate)) {
+      taken.add(candidate);
+      return candidate;
+    }
+    suffix += 1;
+  }
+}
+
 const routes = new Hono()
   .get("/scripts", (c) => c.json(scripts.list()))
   .post("/scripts", async (c) => {
@@ -40,6 +111,36 @@ const routes = new Hono()
     });
 
     return c.json(script, 201);
+  })
+  .get("/scripts/export", (c) =>
+    c.json({
+      version: 1,
+      exportedAt: new Date().toISOString(),
+      scripts: scripts.list().map((script) => ({
+        name: script.name,
+        description: script.description,
+        source: script.source,
+      })),
+    }),
+  )
+  .post("/scripts/import", async (c) => {
+    const body = await readBody<unknown>(c.req.raw);
+
+    try {
+      const payload = parseLibraryPayload(body);
+      const takenNames = new Set(scripts.list().map((script) => script.name));
+      const imported = payload.scripts.map((entry) =>
+        scripts.create({
+          name: resolveImportedName(entry.name, takenNames),
+          description: entry.description,
+          source: entry.source,
+        }),
+      );
+      return c.json({ imported }, 201);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      return c.json({ error: message }, 400);
+    }
   })
   .get("/scripts/:id", (c) => {
     const id = parseId(c.req.param("id"));
