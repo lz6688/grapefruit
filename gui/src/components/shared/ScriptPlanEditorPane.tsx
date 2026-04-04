@@ -252,7 +252,9 @@ export function ScriptPlanEditorPane({
                   }
                 >
                   <SelectTrigger>
-                    <SelectValue />
+                    <SelectValue>
+                      {scriptTargetPlatformLabel(target.platform)}
+                    </SelectValue>
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="fruity">
