@@ -15,7 +15,7 @@ import type {
   ScriptPlanTarget,
   StoredScript,
 } from "@/lib/script-plan-types";
-import { scriptItemLabel } from "@/lib/scripts-ui";
+import { scriptItemLabel, scriptTargetPlatformLabel } from "@/lib/scripts-ui";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Spinner } from "@/components/ui/spinner";
@@ -255,8 +255,12 @@ export function ScriptPlanEditorPane({
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="fruity">fruity</SelectItem>
-                    <SelectItem value="droid">droid</SelectItem>
+                    <SelectItem value="fruity">
+                      {scriptTargetPlatformLabel("fruity")}
+                    </SelectItem>
+                    <SelectItem value="droid">
+                      {scriptTargetPlatformLabel("droid")}
+                    </SelectItem>
                   </SelectContent>
                 </Select>
                 <Select

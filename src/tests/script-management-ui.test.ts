@@ -1,7 +1,13 @@
 import { describe, it, expect } from "bun:test";
 
 import { applyFridaTypes } from "../../gui/src/lib/frida-editor.ts";
-import { scriptItemLabel } from "../../gui/src/lib/scripts-ui.ts";
+import {
+  importedScriptDraft,
+  scriptFileName,
+  scriptItemLabel,
+  scriptLibraryFileName,
+  scriptTargetPlatformLabel,
+} from "../../gui/src/lib/scripts-ui.ts";
 import { formatInjectionLogLine } from "../lib/injection-log.ts";
 
 function createDefaultsMock() {
@@ -74,6 +80,23 @@ describe("script management ui helpers", () => {
         [],
       ),
     ).toBe("Script #13");
+  });
+
+  it("builds import/export helper values for script files and library labels", () => {
+    expect(scriptFileName("hook/bootstrap")).toBe("hook-bootstrap.js");
+    expect(scriptLibraryFileName("2026-04-04T10:20:30.000Z")).toBe(
+      "grapefruit-scripts-2026-04-04.json",
+    );
+    expect(importedScriptDraft("trace.js", "send('x');")).toEqual({
+      name: "trace",
+      description: "",
+      source: "send('x');",
+    });
+  });
+
+  it("maps target platform values to user-facing labels", () => {
+    expect(scriptTargetPlatformLabel("fruity")).toBe("iOS");
+    expect(scriptTargetPlatformLabel("droid")).toBe("Android");
   });
 
   it("formats injection log lines with status and error details", () => {

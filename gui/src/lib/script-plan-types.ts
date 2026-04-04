@@ -12,6 +12,22 @@ export interface StoredScript {
   updatedAt?: string | null;
 }
 
+export interface ScriptLibraryEntry {
+  name: string;
+  description: string | null;
+  source: string;
+}
+
+export interface ScriptLibraryPayload {
+  version: number;
+  exportedAt: string;
+  scripts: ScriptLibraryEntry[];
+}
+
+export interface ScriptLibraryImportResult {
+  imported: StoredScript[];
+}
+
 export interface ScriptPlanTarget {
   id?: number;
   planId?: number;

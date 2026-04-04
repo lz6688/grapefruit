@@ -1,4 +1,6 @@
 import type {
+  ScriptLibraryImportResult,
+  ScriptLibraryPayload,
   ScriptPlanDetail,
   ScriptPlanItem,
   ScriptPlanSummary,
@@ -68,6 +70,16 @@ export const scriptsApi = {
   },
   deleteScript(id: number) {
     return request<void>(`/api/scripts/${id}`, { method: "DELETE" });
+  },
+  exportLibrary() {
+    return request<ScriptLibraryPayload>("/api/scripts/export");
+  },
+  importLibrary(payload: ScriptLibraryPayload) {
+    return request<ScriptLibraryImportResult>("/api/scripts/import", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
   },
   listPlans() {
     return request<ScriptPlanSummary[]>("/api/script-plans");
