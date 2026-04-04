@@ -14,6 +14,8 @@ import {
   LayoutGrid,
   Binary,
   Cpu,
+  FileCode2,
+  Workflow,
 } from "lucide-react";
 
 import {
@@ -138,6 +140,28 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
                 </CommandItem>
               );
             })}
+          </CommandGroup>
+
+          <CommandSeparator />
+          <CommandGroup heading={t("automation")}>
+            <CommandItem
+              onSelect={() => {
+                navigate("/scripts");
+                close();
+              }}
+            >
+              <FileCode2 className="h-4 w-4" />
+              {t("scripts_library")}
+            </CommandItem>
+            <CommandItem
+              onSelect={() => {
+                navigate("/plans");
+                close();
+              }}
+            >
+              <Workflow className="h-4 w-4" />
+              {t("script_plans")}
+            </CommandItem>
           </CommandGroup>
 
           <CommandSeparator />

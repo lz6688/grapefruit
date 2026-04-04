@@ -1,6 +1,6 @@
 import { useTranslation } from "react-i18next";
 import { Link, Outlet } from "react-router";
-import { Binary } from "lucide-react";
+import { Binary, FileCode2, Workflow } from "lucide-react";
 import { SiReact } from "@icons-pack/react-simple-icons";
 
 import logo from "../../assets/logo.svg";
@@ -47,6 +47,28 @@ export function WelcomePage() {
             >
               <Binary className="h-4 w-4 shrink-0" />
               {t("decompiler_r2")}
+            </Link>
+          </div>
+        </div>
+
+        <div className="px-4 py-3 border-t border-border">
+          <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider mb-2">
+            {t("automation")}
+          </p>
+          <div className="flex flex-col gap-0.5">
+            <Link
+              to="/scripts"
+              className="flex items-center gap-2.5 rounded-md px-2.5 py-2 text-sm text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
+            >
+              <FileCode2 className="h-4 w-4 shrink-0" />
+              {t("scripts_library")}
+            </Link>
+            <Link
+              to="/plans"
+              className="flex items-center gap-2.5 rounded-md px-2.5 py-2 text-sm text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
+            >
+              <Workflow className="h-4 w-4 shrink-0" />
+              {t("script_plans")}
             </Link>
           </div>
         </div>

@@ -12,6 +12,8 @@ import { Workspace } from "./components/layout/Workspace";
 import { WorkspaceIndex } from "./components/layout/WorkspaceIndex";
 import { HermesPage } from "./components/pages/HermesPage";
 import { R2Page } from "./components/pages/R2Page";
+import { ScriptsPage } from "./components/pages/ScriptsPage";
+import { ScriptPlansPage } from "./components/pages/ScriptPlansPage";
 
 import { FruityGeneralPanel } from "./components/panels/FruityGeneralPanel";
 import { FruityDevicePanel } from "./components/panels/FruityDevicePanel";
@@ -78,6 +80,8 @@ function App() {
           <Route path="list/:udid/apps" element={<AppsView />} />
           {/* Processes list for a device */}
           <Route path="list/:udid/processes" element={<ProcessesView />} />
+          <Route path="scripts" element={<ScriptsPage />} />
+          <Route path="plans" element={<ScriptPlansPage />} />
         </Route>
 
         {/* Standalone decompiler tools */}
