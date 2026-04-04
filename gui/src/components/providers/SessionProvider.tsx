@@ -1,6 +1,8 @@
 import { type ReactNode, useMemo, useEffect, useState } from "react";
 import { Navigate, useParams, useSearchParams } from "react-router";
 import { io, Socket } from "socket.io-client";
+import { t } from "i18next";
+import { toast } from "sonner";
 
 import {
   Status,
@@ -17,6 +19,7 @@ import {
   type SessionServerEvents,
 } from "@/lib/rpc";
 import { fnv1a } from "@/lib/hash";
+import type { InjectionReport } from "@/lib/script-plan-types";
 
 import { CrashDialog, type CrashDetail } from "@/components/shared/CrashDialog";
 import { DeniedDialog } from "@/components/shared/DeniedDialog";
@@ -40,6 +43,9 @@ function SessionProvider({ children }: { children: ReactNode }) {
   const [fridaMajor, setFridaMajor] = useState(17);
   const [crashDetail, setCrashDetail] = useState<CrashDetail | null>(null);
   const [denied, setDenied] = useState(false);
+  const [lastInjection, setLastInjection] = useState<InjectionReport | null>(
+    null,
+  );
 
   useEffect(() => {
     fetch("/api/version")
@@ -96,6 +102,17 @@ function SessionProvider({ children }: { children: ReactNode }) {
         setStatus(Status.Ready);
         setPid(newPid);
       })
+      .on("injection", (report) => {
+        setLastInjection(report);
+        toast.info(
+          t("injection_summary", {
+            plans: report.matchedPlans,
+            success: report.summary.successful,
+            failed: report.summary.failed,
+            skipped: report.summary.skipped,
+          }),
+        );
+      })
       .on("log", (level: string, message: string) => {
         console.log("agent log", level, message);
       })
@@ -112,6 +129,7 @@ function SessionProvider({ children }: { children: ReactNode }) {
       .on("disconnect", () => {
         console.debug("socket.io disconnect");
         setStatus(Status.Disconnected);
+        setLastInjection(null);
         if (mode === Mode.App) {
           setPid(undefined);
         }
@@ -145,8 +163,22 @@ function SessionProvider({ children }: { children: ReactNode }) {
       status,
       socket,
       fridaMajor,
+      lastInjection,
     }),
-    [platform, mode, device, bundle, pid, identifier, fruity, droid, status, socket, fridaMajor],
+    [
+      platform,
+      mode,
+      device,
+      bundle,
+      pid,
+      identifier,
+      fruity,
+      droid,
+      status,
+      socket,
+      fridaMajor,
+      lastInjection,
+    ],
   );
 
   // Validate required params

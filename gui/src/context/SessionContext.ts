@@ -5,6 +5,7 @@ import {
   type SessionClientEvents,
   type SessionServerEvents,
 } from "@/lib/rpc";
+import type { InjectionReport } from "@/lib/script-plan-types";
 import type { Socket } from "socket.io-client";
 
 export const Status = {
@@ -48,6 +49,7 @@ interface SessionContextType {
   socket: Socket<SessionClientEvents, SessionServerEvents> | null;
   /** Frida major version (16 or 17). Defaults to 17. */
   fridaMajor: number;
+  lastInjection: InjectionReport | null;
 }
 
 const defaultContext: SessionContextType = {
@@ -62,6 +64,7 @@ const defaultContext: SessionContextType = {
   status: Status.Disconnected,
   socket: null,
   fridaMajor: 17,
+  lastInjection: null,
 };
 
 export const SessionContext = React.createContext(defaultContext);

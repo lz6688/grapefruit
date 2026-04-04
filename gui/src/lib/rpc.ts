@@ -1,5 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import type { Socket } from "socket.io-client";
+import type { InjectionReport } from "@/lib/script-plan-types";
 
 import type {
   RemoteRPC,
@@ -218,6 +219,7 @@ export interface SessionClientEvents {
   log: (level: string, text: string) => void;
   syslog: (text: string) => void;
   invalid: () => void;
+  injection: (report: InjectionReport) => void;
   hook: (message: BaseHookMessage) => void;
   flutter: (event: Record<string, unknown>) => void;
   crypto: (message: BaseHookMessage) => void;

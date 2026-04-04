@@ -46,7 +46,7 @@ export function BottomPanelView() {
     gcTime: 0,
   });
 
-  const { data: agentLogHistory } = useQuery<string>({
+  const { data: agentLogHistory, refetch: refetchAgentLogHistory } = useQuery<string>({
     queryKey: ["logHistory", device, identifier, "agent"],
     queryFn: async () => {
       const res = await fetch(
@@ -61,12 +61,14 @@ export function BottomPanelView() {
   });
 
   useEffect(() => {
+    syslogRef.current?.clear();
     if (syslogHistory && syslogHistory.length > 0) {
       syslogRef.current?.append(syslogHistory);
     }
   }, [syslogHistory]);
 
   useEffect(() => {
+    logRef.current?.clear();
     if (agentLogHistory && agentLogHistory.length > 0) {
       logRef.current?.append(agentLogHistory);
     }
@@ -89,7 +91,7 @@ export function BottomPanelView() {
       logRef.current?.append(`[${level}] ${message}`);
     };
 
-    if (status === Status.Ready && socket) {
+    if (socket) {
       socket.on("syslog", handleSyslog);
       socket.on("log", handleLog);
     }
@@ -100,7 +102,13 @@ export function BottomPanelView() {
         socket.off("log", handleLog);
       }
     };
-  }, [socket, status]);
+  }, [socket]);
+
+  useEffect(() => {
+    if (status === Status.Ready && identifier) {
+      void refetchAgentLogHistory();
+    }
+  }, [identifier, refetchAgentLogHistory, status]);
 
   useEffect(() => {
     localStorage.setItem(BOTTOM_PANEL_TAB_STATE, activeTab);

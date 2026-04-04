@@ -15,8 +15,14 @@ import { JNIStore } from "./lib/store/jni.ts";
 import { XPCStore } from "./lib/store/xpc.ts";
 import { HermesStore } from "./lib/store/hermes.ts";
 import { PrivacyStore } from "./lib/store/privacy.ts";
+import { createScriptPlanStore } from "./lib/store/script-plans.ts";
+import { formatInjectionLogLine } from "./lib/injection-log.ts";
 import { setup as setupRelay } from "./relay.ts";
 import type {
+  InjectWhen,
+  InjectionReport,
+  InjectionResultItem,
+  LaunchType,
   Platform,
   SessionParams,
   SessionSocket,
@@ -24,14 +30,15 @@ import type {
 } from "./types.ts";
 
 const manager = frida.getDeviceManager();
+const scriptPlans = createScriptPlanStore();
 
 export { manager };
 
-async function resolveAppPid(
+async function resolveAppTarget(
   device: Device,
   bundleId: string,
   platform: Platform,
-): Promise<number> {
+): Promise<{ pid: number; launch: LaunchType }> {
   const match = await device.enumerateApplications({
     identifiers: [bundleId],
     scope: frida.Scope.Full,
@@ -40,8 +47,12 @@ async function resolveAppPid(
   const app = match.at(0);
   if (!app) throw new Error(`Application ${bundleId} not found on device`);
 
-  const frontmost = await device.getFrontmostApplication();
-  if (frontmost?.pid === app.pid) return app.pid;
+  if (app.pid && app.pid !== 0) {
+    const frontmost = await device.getFrontmostApplication().catch(() => null);
+    if (frontmost?.pid === app.pid) {
+      return { pid: app.pid, launch: "attach" };
+    }
+  }
 
   const devParams = await device.querySystemParameters();
   const opt: SpawnOptions = {};
@@ -49,17 +60,144 @@ async function resolveAppPid(
   if (platform === "fruity") {
     if (devParams.access === "full" && devParams.os.id === "ios") {
       opt.env = {
-        DISABLE_TWEAKS: "1", // workaround for ellekit crash
+        DISABLE_TWEAKS: "1",
       };
     }
   }
 
-  return device.spawn(bundleId, opt);
+  return {
+    pid: await device.spawn(bundleId, opt),
+    launch: "spawn",
+  };
 }
 
 function rpcErrorMessage(ns: string, method: string, err: unknown): string {
   const msg = err instanceof Error ? err.message : String(err);
   return `RPC method ${ns}.${method} failed: ${msg}`;
+}
+
+async function evaluateManagedScript(
+  script: Awaited<
+    ReturnType<typeof import("frida").Session.prototype.createScript>
+  >,
+  source: string,
+  name: string,
+) {
+  return script.exports.invoke("script", "evaluate", [source, name]);
+}
+
+function skippedItem(
+  planId: number,
+  planName: string,
+  scriptId: number,
+  scriptName: string,
+  injectWhen: InjectWhen,
+  error: string,
+): InjectionResultItem {
+  return {
+    planId,
+    planName,
+    scriptId,
+    scriptName,
+    injectWhen,
+    status: "skipped",
+    error,
+  };
+}
+
+interface PendingInjectionLog {
+  level: "info" | "error";
+  text: string;
+}
+
+function queueInjectionLog(
+  logs: PendingInjectionLog[],
+  logger: Writer,
+  level: "info" | "error",
+  text: string,
+) {
+  logger.appendAgentLog(level, text);
+  logs.push({ level, text });
+}
+
+async function runInjectionStage(
+  plans: ReturnType<typeof scriptPlans.match>,
+  stage: InjectWhen,
+  script: Awaited<
+    ReturnType<typeof import("frida").Session.prototype.createScript>
+  >,
+  results: InjectionResultItem[],
+  blockedPlans: Set<number>,
+) {
+  for (const plan of plans) {
+    const stageItems = plan.items.filter(
+      (item) => item.enabled && item.injectWhen === stage,
+    );
+
+    if (blockedPlans.has(plan.id)) {
+      for (const item of stageItems) {
+        results.push(
+          skippedItem(
+            plan.id,
+            plan.name,
+            item.scriptId,
+            item.scriptName,
+            item.injectWhen,
+            "skipped after previous injection failure",
+          ),
+        );
+      }
+      continue;
+    }
+
+    for (const item of stageItems) {
+      try {
+        await evaluateManagedScript(
+          script,
+          item.scriptSource,
+          `managed:${plan.name}:${item.scriptName}:${item.injectWhen}`,
+        );
+        results.push({
+          planId: plan.id,
+          planName: plan.name,
+          scriptId: item.scriptId,
+          scriptName: item.scriptName,
+          injectWhen: item.injectWhen,
+          status: "success",
+        });
+      } catch (err) {
+        results.push({
+          planId: plan.id,
+          planName: plan.name,
+          scriptId: item.scriptId,
+          scriptName: item.scriptName,
+          injectWhen: item.injectWhen,
+          status: "error",
+          error: err instanceof Error ? err.message : String(err),
+        });
+        if (!plan.continueOnError) {
+          blockedPlans.add(plan.id);
+        }
+      }
+    }
+  }
+}
+
+function summarizeInjection(
+  launch: LaunchType,
+  matchedPlans: number,
+  results: InjectionResultItem[],
+): InjectionReport {
+  return {
+    launch,
+    matchedPlans,
+    results,
+    summary: {
+      successful: results.filter((item) => item.status === "success").length,
+      failed: results.filter((item) => item.status === "error").length,
+      skipped: results.filter((item) => item.status === "skipped").length,
+    },
+  };
 }
 
 function setupSocketHandlers(
@@ -168,6 +306,7 @@ export async function connect(socket: SessionSocket, params: SessionParams) {
   const device = await manager.getDeviceById(deviceId, env.timeout);
 
   let pid: number;
+  let launch: LaunchType = "attach";
   if (mode === "app") {
     if (!bundle) throw new Error("bundle is required for app mode");
 
@@ -177,7 +316,9 @@ export async function connect(socket: SessionSocket, params: SessionParams) {
       return;
     }
 
-    pid = await resolveAppPid(device, bundle, platform);
+    const target = await resolveAppTarget(device, bundle, platform);
+    pid = target.pid;
+    launch = target.launch;
   } else {
     if (!targetPid) throw new Error("pid is required for daemon mode");
     pid = targetPid;
@@ -185,20 +326,14 @@ export async function connect(socket: SessionSocket, params: SessionParams) {
 
   const session = await device.attach(pid);
 
-  if (mode === "app") {
-    await device.resume(pid).catch(() => {});
-  }
-
-  // Compute project identifier
   let identifier: string;
   if (mode === "app") {
     identifier = bundle!;
   } else {
-    const pname = processName || `pid`;
+    const pname = processName || "pid";
     identifier = `${pname}-${fnv1a(pname + pid)}`;
   }
 
-  // Create store instances
   const stores: SessionStores = {
     nsurl: new NSURLStore(deviceId, identifier),
     http: new HttpStore(deviceId, identifier),
@@ -219,5 +354,83 @@ export async function connect(socket: SessionSocket, params: SessionParams) {
 
   await script.load();
 
+  const matchedPlans = scriptPlans.match({
+    platform,
+    mode,
+    bundle,
+    pid,
+    processName,
+    autoApply: true,
+  });
+  const injectionResults: InjectionResultItem[] = [];
+  const blockedPlans = new Set<number>();
+  const pendingLogs: PendingInjectionLog[] = [];
+
+  if (matchedPlans.length > 0) {
+    queueInjectionLog(
+      pendingLogs,
+      logHandles,
+      "info",
+      `[inject] matched ${matchedPlans.length} plan(s) for ${launch} session`,
+    );
+  }
+
+  if (launch !== "spawn") {
+    for (const plan of matchedPlans) {
+      for (const item of plan.items) {
+        if (item.enabled && item.injectWhen === "spawn") {
+          injectionResults.push(
+            skippedItem(
+              plan.id,
+              plan.name,
+              item.scriptId,
+              item.scriptName,
+              item.injectWhen,
+              "spawn-only script skipped on attach session",
+            ),
+          );
+        }
+      }
+    }
+  } else {
+    await runInjectionStage(
+      matchedPlans,
+      "spawn",
+      script,
+      injectionResults,
+      blockedPlans,
+    );
+  }
+
+  if (mode === "app" && launch === "spawn") {
+    await device.resume(pid).catch(() => {});
+  }
+
+  await runInjectionStage(
+    matchedPlans,
+    "attach",
+    script,
+    injectionResults,
+    blockedPlans,
+  );
+
   socket.emit("ready", session.pid);
+
+  if (matchedPlans.length > 0) {
+    for (const result of injectionResults) {
+      queueInjectionLog(
+        pendingLogs,
+        logHandles,
+        result.status === "error" ? "error" : "info",
+        formatInjectionLogLine(result),
+      );
+    }
+    for (const entry of pendingLogs) {
+      socket.emit("log", entry.level, entry.text);
+    }
+    socket.emit(
+      "injection",
+      summarizeInjection(launch, matchedPlans.length, injectionResults),
+    );
+  }
 }

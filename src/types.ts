@@ -31,6 +31,30 @@ export type MemoryScanEvent =
 
 export type Platform = "fruity" | "droid";
 export type Mode = "app" | "daemon";
+export type LaunchType = "attach" | "spawn";
+export type InjectWhen = "attach" | "spawn";
+export type InjectionStatus = "success" | "error" | "skipped";
+
+export interface InjectionResultItem {
+  planId: number;
+  planName: string;
+  scriptId: number;
+  scriptName: string;
+  injectWhen: InjectWhen;
+  status: InjectionStatus;
+  error?: string;
+}
+
+export interface InjectionReport {
+  launch: LaunchType;
+  matchedPlans: number;
+  results: InjectionResultItem[];
+  summary: {
+    successful: number;
+    failed: number;
+    skipped: number;
+  };
+}
 
 export interface SessionParams {
   platform: Platform;
@@ -62,6 +86,7 @@ export interface ServerToClientEvents {
   privacy: (msg: PrivacyInput) => void;
   hermes: (event: { url: string; hash: string; size: number }) => void;
   memoryScan: (event: MemoryScanEvent, data?: ArrayBuffer) => void;
+  injection: (report: InjectionReport) => void;
   fatal: (detail: unknown) => void;
 }
 
