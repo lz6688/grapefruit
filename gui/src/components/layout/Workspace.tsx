@@ -1,91 +1,91 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { t } from "i18next";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { StatusBar } from "./StatusBar";
 
 import {
-  type DockviewApi,
-  type DockviewTheme,
   DockviewReact,
+  type DockviewApi,
   type DockviewReadyEvent,
+  type DockviewTheme,
 } from "dockview";
 
-import type { PanelImperativeHandle } from "react-resizable-panels";
 import {
   ResizableHandle,
   ResizablePanel,
   ResizablePanelGroup,
 } from "@/components/ui/resizable";
+import type { PanelImperativeHandle } from "react-resizable-panels";
 
-import { LeftPanelView } from "./LeftPanelView";
-import { BottomPanelView } from "./BottomPanelView";
-import { CommandPalette } from "./CommandPalette";
 import { useSession } from "@/context/SessionContext";
 import SessionProvider from "../providers/SessionProvider";
-import { FruityHandlesTab } from "../tabs/FruityHandlesTab";
-import { FruityInfoPlistTab } from "../tabs/FruityInfoPlistTab";
-import { FruityEntitlementsTab } from "../tabs/FruityEntitlementsTab";
-import {
-  ModuleImportsTab,
-  ModuleSectionsTab,
-  ModuleClassesTab,
-  ModuleSymbolsTab,
-  ModuleExportedTab,
-} from "../tabs/ModuleViewTabs";
-import { FruityClassDetailTab } from "../tabs/FruityClassDetailTab";
-import { FruityClassDumpTab } from "../tabs/FruityClassDumpTab";
-import { DroidClassDetailTab } from "../tabs/DroidClassDetailTab";
 import { ApkBrowserTab } from "../tabs/ApkBrowserTab";
-import { FilesTab } from "../tabs/FilesTab";
-import { ImagePreviewTab } from "../tabs/ImagePreviewTab";
-import { AudioPreviewTab } from "../tabs/AudioPreviewTab";
-import { HexPreviewTab } from "../tabs/HexPreviewTab";
-import { TextEditorTab } from "../tabs/TextEditorTab";
-import { FruityPlistPreviewTab } from "../tabs/FruityPlistPreviewTab";
-import { SQLiteEditorTab } from "../tabs/SQLiteEditorTab";
-import { FontPreviewTab } from "../tabs/FontPreviewTab";
-import { FruityBinaryCookieTab } from "../tabs/FruityBinaryCookieTab";
-import { FruityKeychainTab } from "../tabs/FruityKeychainTab";
-import { FruityUIDumpTab } from "../tabs/FruityUIDumpTab";
-import { MemoryPreviewTab } from "../tabs/MemoryPreviewTab";
-import { MemoryScanTab } from "../tabs/MemoryScanTab";
-import { FruityWebViewTab } from "../tabs/FruityWebViewTab";
-import { FruityJSCTab } from "../tabs/FruityJSCTab";
-import { FruityUserDefaultsTab } from "../tabs/FruityUserDefaultsTab";
-import { HomeTab } from "../tabs/HomeTab";
-import { DisassemblyTab } from "../tabs/DisassemblyTab";
-import { FruityNSURLTab } from "../tabs/FruityNSURLTab";
-import { FlutterMethodChannelsTab } from "../tabs/FlutterMethodChannelsTab";
-import { JNITab } from "../tabs/DroidJNITab";
-import { DroidHandlesTab } from "../tabs/DroidHandlesTab";
-import { DroidKeystoreTab } from "../tabs/DroidKeystoreTab";
-import { FruityInfoPlistInsightsTab } from "../tabs/FruityInfoPlistInsightsTab";
-import { DroidManifestTab } from "../tabs/DroidManifestTab";
-import { DroidProvidersTab } from "../tabs/DroidProvidersTab";
-import { FruityXPCTab } from "../tabs/FruityXPCTab";
-import { ReactNativeTab } from "../tabs/ReactNativeTab";
-import { HermesFileTab } from "../tabs/HermesFileTab";
-import { PrivacyTab } from "../tabs/PrivacyTab";
-import { XCPrivacyTab } from "../tabs/XCPrivacyTab";
-import { DroidHttpTab } from "../tabs/DroidHttpTab";
-import { DroidResourcesTab } from "../tabs/DroidResourcesTab";
-import { DroidWebViewTab } from "../tabs/DroidWebViewTab";
 import { AssetCatalogTab } from "../tabs/AssetCatalogTab";
+import { AudioPreviewTab } from "../tabs/AudioPreviewTab";
+import { BinariesTab } from "../tabs/BinariesTab";
+import { BinaryOverviewTab } from "../tabs/BinaryOverviewTab";
+import { BookmarksTab } from "../tabs/BookmarksTab";
 import { ChecksecTab } from "../tabs/ChecksecTab";
 import { CryptoTab } from "../tabs/CryptoTab";
+import { DexViewerTab } from "../tabs/DexViewerTab";
+import { DisassemblyTab } from "../tabs/DisassemblyTab";
+import { DroidClassDetailTab } from "../tabs/DroidClassDetailTab";
+import { DroidHandlesTab } from "../tabs/DroidHandlesTab";
+import { DroidHttpTab } from "../tabs/DroidHttpTab";
+import { JNITab } from "../tabs/DroidJNITab";
+import { DroidKeystoreTab } from "../tabs/DroidKeystoreTab";
+import { DroidManifestTab } from "../tabs/DroidManifestTab";
+import { DroidProvidersTab } from "../tabs/DroidProvidersTab";
+import { DroidResourcesTab } from "../tabs/DroidResourcesTab";
+import { DroidWebViewTab } from "../tabs/DroidWebViewTab";
+import { FilesTab } from "../tabs/FilesTab";
+import { FlutterMethodChannelsTab } from "../tabs/FlutterMethodChannelsTab";
+import { FontPreviewTab } from "../tabs/FontPreviewTab";
+import { FruityBinaryCookieTab } from "../tabs/FruityBinaryCookieTab";
+import { FruityClassDetailTab } from "../tabs/FruityClassDetailTab";
+import { FruityClassDumpTab } from "../tabs/FruityClassDumpTab";
+import { FruityEntitlementsTab } from "../tabs/FruityEntitlementsTab";
+import { FruityHandlesTab } from "../tabs/FruityHandlesTab";
+import { FruityInfoPlistInsightsTab } from "../tabs/FruityInfoPlistInsightsTab";
+import { FruityInfoPlistTab } from "../tabs/FruityInfoPlistTab";
+import { FruityJSCTab } from "../tabs/FruityJSCTab";
+import { FruityKeychainTab } from "../tabs/FruityKeychainTab";
+import { FruityNSURLTab } from "../tabs/FruityNSURLTab";
+import { FruityPlistPreviewTab } from "../tabs/FruityPlistPreviewTab";
+import { FruityUIDumpTab } from "../tabs/FruityUIDumpTab";
+import { FruityUserDefaultsTab } from "../tabs/FruityUserDefaultsTab";
+import { FruityWebViewTab } from "../tabs/FruityWebViewTab";
+import { FruityXPCTab } from "../tabs/FruityXPCTab";
+import { HermesFileTab } from "../tabs/HermesFileTab";
+import { HexPreviewTab } from "../tabs/HexPreviewTab";
+import { HomeTab } from "../tabs/HomeTab";
 import { Il2CppClassDetailTab } from "../tabs/Il2CppClassDetailTab";
 import { Il2CppClassDumpTab } from "../tabs/Il2CppClassDumpTab";
-import { DexViewerTab } from "../tabs/DexViewerTab";
-import { BinaryOverviewTab } from "../tabs/BinaryOverviewTab";
+import { ImagePreviewTab } from "../tabs/ImagePreviewTab";
 import { MemoryMapsTab } from "../tabs/MemoryMapsTab";
-import { BinariesTab } from "../tabs/BinariesTab";
-import { R2SearchTab } from "../tabs/R2SearchTab";
-import { TypeEditorTab } from "../tabs/TypeEditorTab";
-import { XrefGraphTab } from "../tabs/XrefGraphTab";
-import { BookmarksTab } from "../tabs/BookmarksTab";
+import { MemoryPreviewTab } from "../tabs/MemoryPreviewTab";
+import { MemoryScanTab } from "../tabs/MemoryScanTab";
+import {
+  ModuleClassesTab,
+  ModuleExportedTab,
+  ModuleImportsTab,
+  ModuleSectionsTab,
+  ModuleSymbolsTab,
+} from "../tabs/ModuleViewTabs";
+import { NoCloseTabHeader } from "../tabs/NoCloseTabHeader";
+import { PrivacyTab } from "../tabs/PrivacyTab";
+import { R2DisasmTab } from "../tabs/R2DisasmTab";
 import { R2GraphTab } from "../tabs/R2GraphTab";
 import { R2HexTab } from "../tabs/R2HexTab";
-import { R2DisasmTab } from "../tabs/R2DisasmTab";
-import { NoCloseTabHeader } from "../tabs/NoCloseTabHeader";
+import { R2SearchTab } from "../tabs/R2SearchTab";
+import { ReactNativeTab } from "../tabs/ReactNativeTab";
+import { SQLiteEditorTab } from "../tabs/SQLiteEditorTab";
+import { TextEditorTab } from "../tabs/TextEditorTab";
+import { TypeEditorTab } from "../tabs/TypeEditorTab";
+import { XCPrivacyTab } from "../tabs/XCPrivacyTab";
+import { XrefGraphTab } from "../tabs/XrefGraphTab";
+import { BottomPanelView } from "./BottomPanelView";
+import { CommandPalette } from "./CommandPalette";
+import { LeftPanelView } from "./LeftPanelView";
 
 import { DockContext, useDockActions } from "@/context/DockContext";
 import { R2Provider } from "@/context/R2Context";
@@ -100,7 +100,7 @@ function WorkspaceContent() {
 
   useEffect(() => {
     const target = bundle || (pid ? `PID ${pid}` : "");
-    document.title = "Grapefruit" + (target ? ` - ${target}` : "");
+    document.title = "HacKer" + (target ? ` - ${target}` : "");
   }, [bundle, pid]);
 
   const [bottomPanelVisible, setBottomPanelVisible] = useState(() => {
