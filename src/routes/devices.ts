@@ -1,16 +1,17 @@
 import { Hono } from "hono";
-import frida from "../lib/xvii.ts";
+import env from "../lib/env.ts";
+import * as middleware from "../lib/middleware.ts";
 import {
   app as serializeApp,
   device as serializeDevice,
   process as serializeProcess,
 } from "../lib/serializer.ts";
-import * as middleware from "../lib/middleware.ts";
-import env from "../lib/env.ts";
+import frida from "../lib/xvii.ts";
 
 const manager = frida.getDeviceManager();
 
 const routes = new Hono()
+  // 设备发现接口
   .get("/devices", async (c) => {
     const skip = new Set(["local", "socket", "barebone"]);
     const devices = await frida.enumerateDevices();
