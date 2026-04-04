@@ -12,6 +12,8 @@ import { FlutterStore } from "../lib/store/flutter.ts";
 import { JNIStore } from "../lib/store/jni.ts";
 import { XPCStore } from "../lib/store/xpc.ts";
 import { createPinStore } from "../lib/store/pins.ts";
+import { createScriptStore } from "../lib/store/scripts.ts";
+import { createScriptPlanStore } from "../lib/store/script-plans.ts";
 
 const device = "test-device";
 const identifier = "com.test.app";
@@ -26,6 +28,11 @@ function getStores() {
     xpc: new XPCStore(device, identifier),
   };
 }
+
+const scriptStore = createScriptStore();
+const planStore = createScriptPlanStore();
+const scriptIds = new Set<number>();
+const planIds = new Set<number>();
 
 describe("API tests", () => {
   it("should start http server", async () => {
@@ -147,6 +154,136 @@ describe("API tests", () => {
       method: "POST",
     });
     assert.strictEqual(r1.status, 400, "Should return 400 for missing path");
+  });
+});
+
+describe("Script management API", () => {
+  afterEach(() => {
+    for (const planId of planIds) {
+      planStore.rm(planId);
+    }
+    planIds.clear();
+
+    for (const scriptId of scriptIds) {
+      scriptStore.rm(scriptId);
+    }
+    scriptIds.clear();
+  });
+
+  it("should create, update, list, and delete scripts", async () => {
+    const createRes = await app.request("/api/scripts", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        name: "Bootstrap hooks",
+        description: "initial version",
+        source: "send('bootstrap');",
+      }),
+    });
+    assert.strictEqual(createRes.status, 201);
+    const created = (await createRes.json()) as {
+      id: number;
+      name: string;
+      source: string;
+    };
+    scriptIds.add(created.id);
+    assert.strictEqual(created.name, "Bootstrap hooks");
+
+    const listRes = await app.request("/api/scripts");
+    assert.strictEqual(listRes.status, 200);
+    const list = (await listRes.json()) as Array<{ id: number }>;
+    assert(list.some((script) => script.id === created.id));
+
+    const updateRes = await app.request(`/api/scripts/${created.id}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        name: "Bootstrap hooks v2",
+        source: "send('bootstrap:v2');",
+      }),
+    });
+    assert.strictEqual(updateRes.status, 200);
+    const updated = (await updateRes.json()) as {
+      name: string;
+      source: string;
+    };
+    assert.strictEqual(updated.name, "Bootstrap hooks v2");
+    assert.strictEqual(updated.source, "send('bootstrap:v2');");
+
+    const deleteRes = await app.request(`/api/scripts/${created.id}`, {
+      method: "DELETE",
+    });
+    assert.strictEqual(deleteRes.status, 204);
+    scriptIds.delete(created.id);
+
+    const missingRes = await app.request(`/api/scripts/${created.id}`);
+    assert.strictEqual(missingRes.status, 404);
+  });
+
+  it("should create plans, replace targets and items, then read full detail", async () => {
+    const script = scriptStore.create({
+      name: "Attach hook",
+      source: "send('attach');",
+    });
+    scriptIds.add(script.id);
+
+    const createRes = await app.request("/api/script-plans", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        name: "Demo auto inject",
+        enabled: true,
+        autoApply: true,
+        continueOnError: false,
+        priority: 5,
+      }),
+    });
+    assert.strictEqual(createRes.status, 201);
+    const created = (await createRes.json()) as { id: number; name: string };
+    planIds.add(created.id);
+
+    const targetsRes = await app.request(
+      `/api/script-plans/${created.id}/targets`,
+      {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          targets: [
+            {
+              platform: "fruity",
+              mode: "app",
+              bundle: "com.test.demo",
+            },
+          ],
+        }),
+      },
+    );
+    assert.strictEqual(targetsRes.status, 200);
+
+    const itemsRes = await app.request(`/api/script-plans/${created.id}/items`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        items: [
+          {
+            scriptId: script.id,
+            injectWhen: "attach",
+            enabled: true,
+          },
+        ],
+      }),
+    });
+    assert.strictEqual(itemsRes.status, 200);
+
+    const detailRes = await app.request(`/api/script-plans/${created.id}`);
+    assert.strictEqual(detailRes.status, 200);
+    const detail = (await detailRes.json()) as {
+      targets: Array<{ bundle?: string }>;
+      items: Array<{ scriptId: number; scriptName: string }>;
+    };
+    assert.strictEqual(detail.targets[0]?.bundle, "com.test.demo");
+    assert.strictEqual(detail.items[0]?.scriptId, script.id);
+    assert.strictEqual(detail.items[0]?.scriptName, "Attach hook");
   });
 });
 

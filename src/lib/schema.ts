@@ -13,6 +13,75 @@ export const preferences = sqliteTable("preferences", {
   value: text("value"),
 });
 
+export const scripts = sqliteTable(
+  "scripts",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    name: text("name").notNull(),
+    description: text("description"),
+    source: text("source").notNull(),
+    createdAt: text("created_at").default(sql`CURRENT_TIMESTAMP`),
+    updatedAt: text("updated_at").default(sql`CURRENT_TIMESTAMP`),
+  },
+  (table) => [index("idx_scripts_updated_at").on(table.updatedAt)],
+);
+
+export const scriptPlans = sqliteTable(
+  "script_plans",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    name: text("name").notNull(),
+    enabled: integer("enabled", { mode: "boolean" }).notNull().default(true),
+    autoApply: integer("auto_apply", { mode: "boolean" }).notNull().default(true),
+    continueOnError: integer("continue_on_error", { mode: "boolean" })
+      .notNull()
+      .default(true),
+    priority: integer("priority").notNull().default(0),
+    createdAt: text("created_at").default(sql`CURRENT_TIMESTAMP`),
+    updatedAt: text("updated_at").default(sql`CURRENT_TIMESTAMP`),
+  },
+  (table) => [index("idx_script_plans_priority").on(table.priority, table.updatedAt)],
+);
+
+export const scriptPlanTargets = sqliteTable(
+  "script_plan_targets",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    planId: integer("plan_id").notNull(),
+    platform: text("platform").notNull(),
+    mode: text("mode").notNull(),
+    bundle: text("bundle"),
+    processName: text("process_name"),
+    pid: integer("pid"),
+  },
+  (table) => [
+    index("idx_script_plan_targets_plan_id").on(table.planId),
+    index("idx_script_plan_targets_match").on(
+      table.platform,
+      table.mode,
+      table.bundle,
+      table.processName,
+      table.pid,
+    ),
+  ],
+);
+
+export const scriptPlanItems = sqliteTable(
+  "script_plan_items",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    planId: integer("plan_id").notNull(),
+    scriptId: integer("script_id").notNull(),
+    position: integer("position").notNull(),
+    injectWhen: text("inject_when").notNull(),
+    enabled: integer("enabled", { mode: "boolean" }).notNull().default(true),
+  },
+  (table) => [
+    index("idx_script_plan_items_plan_id").on(table.planId),
+    uniqueIndex("idx_script_plan_items_position").on(table.planId, table.position),
+  ],
+);
+
 export const nsurlRequests = sqliteTable(
   "nsurl_requests",
   {
