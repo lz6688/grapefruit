@@ -130,7 +130,9 @@ class R2Wasi {
     this.#corePtr = core;
 
     const { arch, bits, os } = this.#config;
-    if (arch) this.#rawCmd(`e asm.arch=${arch}`);
+    if (shouldConfigureLiveAsmArch(os, arch) && arch) {
+      this.#rawCmd(`e asm.arch=${arch}`);
+    }
     if (bits) this.#rawCmd(`e asm.bits=${bits}`);
     if (os) this.#rawCmd(`e asm.os=${os}`);
 
@@ -415,6 +417,17 @@ function bitsFromFrida(arch: string, pointerSize: number): number {
   }
 }
 
+export function shouldConfigureLiveAsmArch(
+  os?: string,
+  arch?: string,
+): boolean {
+  // Temporary workaround:
+  // on current live iOS arm64 targets, `e asm.arch=arm` can block the R2
+  // session initialization indefinitely. Keep the dashboard usable by
+  // skipping only that specific combination.
+  return !(os === "darwin" && arch === "arm");
+}
+
 export async function openLive(opts: {
   deviceId: string;
   pid: number;
@@ -435,10 +448,11 @@ export async function openLive(opts: {
   `);
   await fridaScript.load();
 
+  const r2Arch = archFromFrida(opts.arch);
   const id = randomUUID();
   const r2 = new R2Wasi({
     wasmBytes: await getWasmBytes(),
-    arch: archFromFrida(opts.arch),
+    arch: r2Arch,
     bits: bitsFromFrida(opts.arch, opts.pointerSize),
     os: opts.platform,
     pageSize: opts.pageSize,
