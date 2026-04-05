@@ -1,5 +1,6 @@
 import { spawn, type ChildProcess } from "node:child_process";
 import { WASI } from "node:wasi";
+import { Worker } from "node:worker_threads";
 import { readFile, writeFile, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -9,6 +10,7 @@ import { fileURLToPath } from "node:url";
 import frida from "./xvii.ts";
 import { asset, agent } from "./assets.ts";
 import { create as createTransport } from "./transport.ts";
+import env from "./env.ts";
 
 export type ReadRequestHandler = (
   address: bigint,
@@ -73,6 +75,7 @@ export interface R2WorkerChild {
     message: unknown,
     callback?: (error: Error | null) => void,
   ) => boolean;
+  postMessage?: (message: unknown) => void;
   on(event: "message", listener: (message: unknown) => void): this;
   once(
     event: "exit",
@@ -83,6 +86,7 @@ export interface R2WorkerChild {
     on(event: "data", listener: (chunk: string) => void): void;
   } | null;
   kill(): boolean;
+  terminate?: () => Promise<number>;
 }
 
 interface R2WasiConfig {
@@ -542,11 +546,27 @@ class R2WorkerController implements R2Controller {
 
     return new Promise<T>((resolve, reject) => {
       this.#pending.set(id, { resolve, reject });
-      this.#proc.send?.(message, (error) => {
-        if (!error) return;
-        this.#pending.delete(id);
-        reject(error);
-      });
+      if (this.#proc.send) {
+        this.#proc.send(message, (error) => {
+          if (!error) return;
+          this.#pending.delete(id);
+          reject(error);
+        });
+        return;
+      }
+
+      if (this.#proc.postMessage) {
+        try {
+          this.#proc.postMessage(message);
+        } catch (error) {
+          this.#pending.delete(id);
+          reject(error as Error);
+        }
+        return;
+      }
+
+      this.#pending.delete(id);
+      reject(new Error("r2 worker transport does not support messaging"));
     });
   }
 
@@ -580,7 +600,11 @@ class R2WorkerController implements R2Controller {
       await this.#request("close");
     } finally {
       this.#closed = true;
-      this.#proc.kill();
+      if (this.#proc.terminate) {
+        await this.#proc.terminate();
+      } else {
+        this.#proc.kill();
+      }
     }
   }
 }
@@ -674,10 +698,14 @@ export async function openLive(opts: {
   pageSize: number;
 }): Promise<R2Session> {
   const childPath = resolveR2ChildPath();
-  const proc = spawn(process.execPath, [childPath], {
-    stdio: ["ignore", "ignore", "pipe", "ipc"],
-    env: process.env,
-  });
+  const proc: R2WorkerChild = env.bunSEA
+    ? (new Worker(new URL("./r2-child.ts", import.meta.url), {
+        stderr: true,
+      }) as unknown as R2WorkerChild)
+    : (spawn(process.execPath, [childPath], {
+        stdio: ["ignore", "ignore", "pipe", "ipc"],
+        env: process.env,
+      }) as unknown as R2WorkerChild);
   const r2 = createR2WorkerController(proc as unknown as R2WorkerChild);
 
   try {
@@ -690,7 +718,11 @@ export async function openLive(opts: {
       pageSize: opts.pageSize,
     });
   } catch (error) {
-    proc.kill();
+    if (proc.terminate) {
+      await proc.terminate();
+    } else {
+      proc.kill();
+    }
     throw error;
   }
 
