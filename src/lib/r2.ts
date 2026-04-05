@@ -1,6 +1,6 @@
 import { spawn, type ChildProcess } from "node:child_process";
 import { WASI } from "node:wasi";
-import { Worker } from "node:worker_threads";
+import { Worker, isMainThread, parentPort, workerData } from "node:worker_threads";
 import { readFile, writeFile, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -479,6 +479,8 @@ interface R2WorkerResponse {
   error?: string;
 }
 
+const R2_WORKER_KIND = "igf-r2-worker";
+
 class R2WorkerController implements R2Controller {
   #proc: R2WorkerChild;
   #pending = new Map<
@@ -615,6 +617,97 @@ export function createR2WorkerController(proc: R2WorkerChild): R2Controller & {
   return new R2WorkerController(proc);
 }
 
+function installInlineR2Worker() {
+  let session: R2Session | null = null;
+  let queue = Promise.resolve();
+
+  const reply = (message: R2WorkerResponse) => {
+    parentPort?.postMessage(message);
+  };
+
+  const cleanup = async () => {
+    if (!session) return;
+    try {
+      await session.r2.close();
+    } finally {
+      await session.fridaCleanup?.();
+      session = null;
+    }
+  };
+
+  const handle = async (message: R2WorkerRequest) => {
+    switch (message.type) {
+      case "open": {
+        if (session) throw new Error("session already open");
+        const payload = message.payload ?? {};
+        session = await openLiveLocal({
+          deviceId: String(payload.deviceId),
+          pid: Number(payload.pid),
+          arch: String(payload.arch),
+          platform: String(payload.platform),
+          pointerSize: Number(payload.pointerSize),
+          pageSize: Number(payload.pageSize),
+        });
+        return { id: session.id };
+      }
+
+      case "rawCmd":
+        if (!session) throw new Error("no session");
+        return session.r2.rawCmd(String(message.payload?.command ?? ""));
+
+      case "cmd":
+        if (!session) throw new Error("no session");
+        return session.r2.cmd(String(message.payload?.command ?? ""));
+
+      case "disassemble":
+        if (!session) throw new Error("no session");
+        return session.r2.disassembleFunction(
+          BigInt(String(message.payload?.address ?? "0")),
+        );
+
+      case "graph":
+        if (!session) throw new Error("no session");
+        return session.r2.functionGraph(
+          BigInt(String(message.payload?.address ?? "0")),
+        );
+
+      case "close":
+        await cleanup();
+        return true;
+    }
+  };
+
+  parentPort?.on("message", (incoming: unknown) => {
+    if (!incoming || typeof incoming !== "object") {
+      reply({ id: -1, ok: false, error: "invalid request payload" });
+      return;
+    }
+
+    const message = incoming as Partial<R2WorkerRequest>;
+    if (typeof message.id !== "number" || typeof message.type !== "string") {
+      reply({ id: -1, ok: false, error: "invalid request payload" });
+      return;
+    }
+
+    queue = queue
+      .then(async () => {
+        const result = await handle(message as R2WorkerRequest);
+        reply({ id: message.id!, ok: true, result });
+      })
+      .catch((error) => {
+        reply({
+          id: message.id!,
+          ok: false,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      });
+  });
+}
+
+if (!isMainThread && workerData?.kind === R2_WORKER_KIND) {
+  installInlineR2Worker();
+}
+
 function resolveR2ChildPath(): string {
   const current = fileURLToPath(import.meta.url);
   return fileURLToPath(
@@ -699,8 +792,9 @@ export async function openLive(opts: {
 }): Promise<R2Session> {
   const childPath = resolveR2ChildPath();
   const proc: R2WorkerChild = env.bunSEA
-    ? (new Worker(new URL("./r2-child.ts", import.meta.url), {
+    ? (new Worker(new URL(import.meta.url), {
         stderr: true,
+        workerData: { kind: R2_WORKER_KIND },
       }) as unknown as R2WorkerChild)
     : (spawn(process.execPath, [childPath], {
         stdio: ["ignore", "ignore", "pipe", "ipc"],
