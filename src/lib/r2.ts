@@ -1,10 +1,8 @@
-import { spawn, type ChildProcess } from "node:child_process";
 import { WASI } from "node:wasi";
 import { readFile, writeFile, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { randomUUID } from "node:crypto";
-import { fileURLToPath } from "node:url";
 
 import frida from "./xvii.ts";
 import { asset, agent } from "./assets.ts";
@@ -58,31 +56,6 @@ export interface CfgBlock {
   jump?: number;
   fail?: number;
   ops: DisasmInstruction[];
-}
-
-export interface R2Controller {
-  rawCmd(command: string): Promise<string>;
-  cmd(command: string): Promise<string>;
-  disassembleFunction(address: bigint): Promise<string | null>;
-  functionGraph(address: bigint): Promise<CfgFunction | null>;
-  close(): Promise<void>;
-}
-
-export interface R2WorkerChild {
-  send?: (
-    message: unknown,
-    callback?: (error: Error | null) => void,
-  ) => boolean;
-  on(event: "message", listener: (message: unknown) => void): this;
-  once(
-    event: "exit",
-    listener: (code: number | null, signal: NodeJS.Signals | null) => void,
-  ): this;
-  stderr?: {
-    setEncoding(encoding: string): void;
-    on(event: "data", listener: (chunk: string) => void): void;
-  } | null;
-  kill(): boolean;
 }
 
 interface R2WasiConfig {
@@ -157,7 +130,9 @@ class R2Wasi {
     this.#corePtr = core;
 
     const { arch, bits, os } = this.#config;
-    if (arch) this.#rawCmd(`e asm.arch=${arch}`);
+    if (shouldConfigureLiveAsmArch(os, arch) && arch) {
+      this.#rawCmd(`e asm.arch=${arch}`);
+    }
     if (bits) this.#rawCmd(`e asm.bits=${bits}`);
     if (os) this.#rawCmd(`e asm.os=${os}`);
 
@@ -442,163 +417,18 @@ function bitsFromFrida(arch: string, pointerSize: number): number {
   }
 }
 
-function createLocalController(r2: R2Wasi): R2Controller {
-  return {
-    rawCmd(command: string) {
-      return Promise.resolve(r2.rawCmd(command));
-    },
-    cmd(command: string) {
-      return r2.cmd(command);
-    },
-    disassembleFunction(address: bigint) {
-      return r2.disassembleFunction(address);
-    },
-    functionGraph(address: bigint) {
-      return r2.functionGraph(address);
-    },
-    async close() {
-      r2.close();
-    },
-  };
+export function shouldConfigureLiveAsmArch(
+  os?: string,
+  arch?: string,
+): boolean {
+  // Temporary workaround:
+  // on current live iOS arm64 targets, `e asm.arch=arm` can block the R2
+  // session initialization indefinitely. Keep the dashboard usable by
+  // skipping only that specific combination.
+  return !(os === "darwin" && arch === "arm");
 }
 
-interface R2WorkerRequest {
-  id: number;
-  type: "open" | "rawCmd" | "cmd" | "disassemble" | "graph" | "close";
-  payload?: Record<string, unknown>;
-}
-
-interface R2WorkerResponse {
-  id: number;
-  ok: boolean;
-  result?: unknown;
-  error?: string;
-}
-
-class R2WorkerController implements R2Controller {
-  #proc: R2WorkerChild;
-  #pending = new Map<
-    number,
-    { resolve: (value: unknown) => void; reject: (error: Error) => void }
-  >();
-  #nextId = 1;
-  #closed = false;
-
-  constructor(proc: R2WorkerChild) {
-    this.#proc = proc;
-    this.#proc.on("message", (message: unknown) => {
-      this.#handleMessage(message);
-    });
-
-    const stderr = this.#proc.stderr;
-    if (stderr) {
-      stderr.setEncoding("utf8");
-      stderr.on("data", (chunk: string) => {
-        const text = chunk.trim();
-        if (text) console.error(`[r2-child] ${text}`);
-      });
-    }
-
-    this.#proc.once("exit", (code, signal) => {
-      this.#closed = true;
-      const reason = `r2 child exited (${code ?? "null"}, ${signal ?? "null"})`;
-      for (const pending of this.#pending.values()) {
-        pending.reject(new Error(reason));
-      }
-      this.#pending.clear();
-    });
-  }
-
-  #handleMessage(message: unknown) {
-    if (!message || typeof message !== "object") {
-      console.error("[r2-child] invalid IPC response:", message);
-      return;
-    }
-
-    const response = message as Partial<R2WorkerResponse>;
-    if (typeof response.id !== "number" || typeof response.ok !== "boolean") {
-      console.error("[r2-child] malformed IPC response:", response);
-      return;
-    }
-
-    const pending = this.#pending.get(response.id);
-    if (!pending) return;
-    this.#pending.delete(response.id);
-
-    if (response.ok) pending.resolve(response.result);
-    else pending.reject(new Error(response.error ?? "unknown r2 child error"));
-  }
-
-  #request<T = unknown>(
-    type: R2WorkerRequest["type"],
-    payload?: Record<string, unknown>,
-  ): Promise<T> {
-    if (this.#closed) {
-      return Promise.reject(new Error("r2 child is already closed"));
-    }
-
-    const id = this.#nextId++;
-    const message: R2WorkerRequest = { id, type, payload };
-
-    return new Promise<T>((resolve, reject) => {
-      this.#pending.set(id, { resolve, reject });
-      this.#proc.send?.(message, (error) => {
-        if (!error) return;
-        this.#pending.delete(id);
-        reject(error);
-      });
-    });
-  }
-
-  open(payload: Record<string, unknown>): Promise<void> {
-    return this.#request("open", payload);
-  }
-
-  rawCmd(command: string): Promise<string> {
-    return this.#request<string>("rawCmd", { command });
-  }
-
-  cmd(command: string): Promise<string> {
-    return this.#request<string>("cmd", { command });
-  }
-
-  disassembleFunction(address: bigint): Promise<string | null> {
-    return this.#request<string | null>("disassemble", {
-      address: address.toString(),
-    });
-  }
-
-  functionGraph(address: bigint): Promise<CfgFunction | null> {
-    return this.#request<CfgFunction | null>("graph", {
-      address: address.toString(),
-    });
-  }
-
-  async close(): Promise<void> {
-    if (this.#closed) return;
-    try {
-      await this.#request("close");
-    } finally {
-      this.#closed = true;
-      this.#proc.kill();
-    }
-  }
-}
-
-export function createR2WorkerController(proc: R2WorkerChild): R2Controller & {
-  open: (payload: Record<string, unknown>) => Promise<void>;
-} {
-  return new R2WorkerController(proc);
-}
-
-function resolveR2ChildPath(): string {
-  const current = fileURLToPath(import.meta.url);
-  return fileURLToPath(
-    new URL(current.endsWith(".ts") ? "./r2-child.ts" : "./r2-child.js", import.meta.url),
-  );
-}
-
-export async function openLiveLocal(opts: {
+export async function openLive(opts: {
   deviceId: string;
   pid: number;
   arch: string;
@@ -653,7 +483,7 @@ export async function openLiveLocal(opts: {
 
   const session: R2Session = {
     id,
-    r2: createLocalController(r2),
+    r2,
     async fridaCleanup() {
       await fridaScript.unload();
       await fridaSession.detach();
@@ -661,51 +491,6 @@ export async function openLiveLocal(opts: {
     createdAt: Date.now(),
     lastUsed: Date.now(),
   };
-  sessions.set(id, session);
-  return session;
-}
-
-export async function openLive(opts: {
-  deviceId: string;
-  pid: number;
-  arch: string;
-  platform: string;
-  pointerSize: number;
-  pageSize: number;
-}): Promise<R2Session> {
-  const childPath = resolveR2ChildPath();
-  const proc = spawn(process.execPath, [childPath], {
-    stdio: ["ignore", "ignore", "pipe", "ipc"],
-    env: process.env,
-  });
-  const r2 = createR2WorkerController(proc as unknown as R2WorkerChild);
-
-  try {
-    await r2.open({
-      deviceId: opts.deviceId,
-      pid: opts.pid,
-      arch: opts.arch,
-      platform: opts.platform,
-      pointerSize: opts.pointerSize,
-      pageSize: opts.pageSize,
-    });
-  } catch (error) {
-    proc.kill();
-    throw error;
-  }
-
-  const id = randomUUID();
-  const session: R2Session = {
-    id,
-    r2,
-    createdAt: Date.now(),
-    lastUsed: Date.now(),
-  };
-
-  proc.once("exit", () => {
-    sessions.delete(id);
-  });
-
   sessions.set(id, session);
   return session;
 }
@@ -728,7 +513,7 @@ export async function openFile(
 
   const session: R2Session = {
     id,
-    r2: createLocalController(r2),
+    r2,
     createdAt: Date.now(),
     lastUsed: Date.now(),
   };
@@ -833,7 +618,7 @@ export function get(id: string): R2Session | undefined {
 export async function close(id: string): Promise<boolean> {
   const s = sessions.get(id);
   if (!s) return false;
-  await s.r2.close();
+  s.r2.close();
   if (s.fridaCleanup) await s.fridaCleanup();
   sessions.delete(id);
   return true;
@@ -858,8 +643,8 @@ setInterval(() => {
   for (const [id, s] of sessions) {
     if (now - s.lastUsed > SESSION_TTL) {
       console.info(`[r2] closing idle session ${id}`);
-      void s.r2.close();
-      void s.fridaCleanup?.();
+      s.r2.close();
+      s.fridaCleanup?.();
       sessions.delete(id);
     }
   }
