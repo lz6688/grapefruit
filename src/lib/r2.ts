@@ -157,9 +157,7 @@ class R2Wasi {
     this.#corePtr = core;
 
     const { arch, bits, os } = this.#config;
-    if (shouldConfigureLiveAsmArch(os, arch) && arch) {
-      this.#rawCmd(`e asm.arch=${arch}`);
-    }
+    if (arch) this.#rawCmd(`e asm.arch=${arch}`);
     if (bits) this.#rawCmd(`e asm.bits=${bits}`);
     if (os) this.#rawCmd(`e asm.os=${os}`);
 
@@ -442,17 +440,6 @@ function bitsFromFrida(arch: string, pointerSize: number): number {
     default:
       return 32;
   }
-}
-
-export function shouldConfigureLiveAsmArch(
-  os?: string,
-  arch?: string,
-): boolean {
-  // Temporary workaround:
-  // on current live iOS arm64 targets, `e asm.arch=arm` can block the R2
-  // session initialization indefinitely. Keep the dashboard usable by
-  // skipping only that specific combination.
-  return !(os === "darwin" && arch === "arm");
 }
 
 function createLocalController(r2: R2Wasi): R2Controller {
