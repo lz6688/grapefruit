@@ -1,4 +1,3 @@
-import { parentPort } from "node:worker_threads";
 import type { CfgFunction } from "./r2.ts";
 import { openLiveLocal, type R2Session } from "./r2.ts";
 
@@ -16,10 +15,6 @@ interface R2WorkerResponse {
 }
 
 function reply(message: R2WorkerResponse) {
-  if (parentPort) {
-    parentPort.postMessage(message);
-    return;
-  }
   process.send?.(message);
 }
 
@@ -78,7 +73,7 @@ async function handle(message: R2WorkerRequest) {
   }
 }
 
-function handleIncoming(incoming: unknown) {
+process.on("message", (incoming: unknown) => {
   if (!incoming || typeof incoming !== "object") {
     reply({ id: -1, ok: false, error: "invalid request payload" });
     return;
@@ -102,13 +97,7 @@ function handleIncoming(incoming: unknown) {
         error: error instanceof Error ? error.message : String(error),
       });
     });
-}
-
-if (parentPort) {
-  parentPort.on("message", handleIncoming);
-} else {
-  process.on("message", handleIncoming);
-}
+});
 
 process.on("SIGTERM", () => {
   void cleanup().finally(() => process.exit(0));
