@@ -85,7 +85,7 @@ describe("script management ui helpers", () => {
   it("builds import/export helper values for script files and library labels", () => {
     expect(scriptFileName("hook/bootstrap")).toBe("hook-bootstrap.js");
     expect(scriptLibraryFileName("2026-04-04T10:20:30.000Z")).toBe(
-      "grapefruit-scripts-2026-04-04.json",
+      "frida-scripts-2026-04-04.json",
     );
     expect(importedScriptDraft("trace.js", "send('x');")).toEqual({
       name: "trace",

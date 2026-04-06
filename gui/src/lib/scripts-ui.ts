@@ -21,7 +21,7 @@ export function scriptFileName(name: string): string {
 
 export function scriptLibraryFileName(exportedAt = new Date().toISOString()): string {
   const stamp = exportedAt.slice(0, 10) || "library";
-  return `grapefruit-scripts-${stamp}.json`;
+  return `frida-scripts-${stamp}.json`;
 }
 
 export function importedScriptDraft(fileName: string, source: string) {
