@@ -144,4 +144,54 @@ describe("socket.io tests", () => {
     },
     { timeout: 15000 },
   );
+
+  it(
+    "should accept session params from handshake auth when query is empty",
+    async () => {
+      const deviceId = process.env.UDID;
+      if (!deviceId) {
+        console.warn(
+          "Skipping auth-backed /session test: UDID environment variable not set",
+        );
+        return;
+      }
+
+      const { server, io } = createTestServer();
+      await new Promise<void>((resolve) => server.listen(() => resolve()));
+
+      const { port } = server.address() as AddressInfo;
+      const socket = ioc(`http://localhost:${port}/session`, {
+        auth: {
+          device: deviceId,
+          platform: "fruity",
+          mode: "app",
+          bundle: "com.apple.mobilesafari",
+        },
+      });
+
+      try {
+        let receivedReady = false;
+        let receivedInvalid = false;
+
+        socket.on("ready", () => {
+          receivedReady = true;
+          socket.disconnect();
+        });
+
+        socket.on("invalid", () => {
+          receivedInvalid = true;
+          socket.disconnect();
+        });
+
+        await new Promise((resolve) => setTimeout(resolve, 8000));
+
+        expect(receivedInvalid).toBe(false);
+        expect(receivedReady).toBe(true);
+      } finally {
+        socket.disconnect();
+        await closeTestServer(server, io);
+      }
+    },
+    { timeout: 15000 },
+  );
 });

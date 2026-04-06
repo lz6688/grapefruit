@@ -85,7 +85,7 @@ function SessionProvider({ children }: { children: ReactNode }) {
 
     const socket: Socket<SessionClientEvents, SessionServerEvents> = io(
       "/session",
-      { query },
+      { query, auth: query },
     );
 
     socket
